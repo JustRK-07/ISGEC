@@ -1,0 +1,52 @@
+# ─── Original Node prototype ─────────────────────────────────────
+node_modules/
+.env
+data/uploads/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+*.log
+
+# ─── Claude Code internal state ─────────────────────────────────
+.claude/
+
+# ─── adv/ — Next.js + FastAPI conversion ────────────────────────
+# Python (backend)
+adv/backend/.venv/
+adv/backend/**/__pycache__/
+adv/backend/**/*.pyc
+adv/backend/.pytest_cache/
+adv/backend/.mypy_cache/
+adv/backend/.ruff_cache/
+adv/backend/htmlcov/
+adv/backend/.coverage
+adv/backend/*.egg-info/
+
+# Node (frontend)
+adv/frontend/node_modules/
+adv/frontend/.next/
+adv/frontend/out/
+adv/frontend/.turbo/
+adv/frontend/*.tsbuildinfo
+adv/frontend/next-env.d.ts
+
+# Runtime data (per-user — never commit)
+adv/backend/data/*.db
+adv/backend/data/*.db-shm
+adv/backend/data/*.db-wal
+adv/backend/uploads/
+!adv/backend/data/.gitkeep
+!adv/backend/uploads/.gitkeep
+
+# ─── Editor / OS ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ─── Local secrets ──────────────────────────────────────────────
+.env
+.env.local
+.env.*.local

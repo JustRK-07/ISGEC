@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #FAFAF7;
+  --bg-dark: #0F172A;
+  --text-primary: #0F172A;
+  --text-muted: #64748B;
+  --accent: #0EA5A4;
+  --accent-hover: #0D9488;
+  --clash-hard: #DC2626;
+  --clash-soft: #F59E0B;
+  --pass: #10B981;
+  --border: #E2E8F0;
+}
+
+html, body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle blueprint grid background — used in the hero */
+.blueprint-grid {
+  background-image:
+    linear-gradient(rgba(14, 165, 164, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 164, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* QA-stamp visual treatment for testimonials */
+.qa-stamp {
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  position: relative;
+}
+.qa-stamp::before {
+  content: "QA · QC";
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
