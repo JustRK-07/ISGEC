@@ -9,7 +9,7 @@ export interface ProjectSummary {
   shortName: string;
   rev: string | null;
   kind: string;
-  status: "processing" | "ready" | "error";
+  status: "processing" | "ready" | "error" | "archived" | "stale" | "active";
   createdAt: number;
   lastOpened: number;
   summary: { pass: number; warn: number; fail: number };
@@ -88,32 +88,52 @@ export interface ProjectDetail extends ProjectSummary {
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
-  (typeof window !== "undefined" ? "" : "http://localhost:8000");
+  (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8001` : "http://localhost:8001");
 
-export async function fetcher<T>(path: string): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const res = await fetch(url);
+async function handle<T>(res: Response): Promise<T> {
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("application/json") ? await res.json() : await res.text();
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    const msg = (body && (body.error || body.message)) || `HTTP ${res.status}`;
+    const err = new Error(msg);
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
   }
-  return res.json();
+  return body as T;
 }
 
-export async function patchIssue(id: string, body: { state?: string; assigned?: string }) {
-  const res = await fetch(`${API_BASE}/api/issues/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
-  return res.json();
-}
+export const api = {
+  base: API_BASE,
 
-export async function triggerAnalysis(projectId: string) {
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/analyze`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error(`Analyze failed: ${res.status}`);
-  return res.json();
-}
+  listProjects(): Promise<ProjectSummary[]> {
+    return fetch(`${API_BASE}/api/projects`).then(handle);
+  },
+
+  getProject(id: string): Promise<ProjectDetail> {
+    return fetch(`${API_BASE}/api/projects/${id}`).then(handle);
+  },
+
+  createProject(formData: FormData): Promise<ProjectSummary> {
+    return fetch(`${API_BASE}/api/projects`, { method: "POST", body: formData }).then(handle);
+  },
+
+  deleteProject(id: string): Promise<{ ok: boolean }> {
+    return fetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" }).then(handle);
+  },
+
+  triggerAnalysis(projectId: string): Promise<{ status: string }> {
+    return fetch(`${API_BASE}/api/projects/${projectId}/analyze`, { method: "POST" }).then(handle);
+  },
+
+  getAnalysisStatus(projectId: string): Promise<ProjectDetail["analysis"]> {
+    return fetch(`${API_BASE}/api/projects/${projectId}/analysis`).then(handle);
+  },
+
+  patchIssue(id: string, body: { state?: string; assigned?: string }) {
+    return fetch(`${API_BASE}/api/issues/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(handle);
+  },
+};
