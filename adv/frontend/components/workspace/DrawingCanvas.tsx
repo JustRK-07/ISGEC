@@ -98,32 +98,31 @@ export function DrawingCanvas({ entities, sheets }: Props) {
     }
   }, [entities, activeSheet, scale, offset]);
 
+  // The parent workspace page already provides a `.viewer-canvas-app`
+  // wrapper. We render only the top-right controls + the canvas itself.
   return (
-    <div className="w-full h-full relative">
-      <div className="absolute top-4 right-4 z-10 flex gap-2">
+    <>
+      <div className="canvas-tool tr">
         <select
           value={activeSheet}
           onChange={(e) => setActiveSheet(e.target.value)}
-          className="bg-bg-dark text-white border border-border rounded px-2 py-1 text-sm"
+          aria-label="Active sheet"
         >
           {sheets.map((s) => (
-            <option key={s} value={s}>SHEET {s}</option>
+            <option key={s} value={s}>
+              SHEET {s}
+            </option>
           ))}
         </select>
-        <button
-          onClick={() => setScale((s) => Math.min(s * 1.25, 1))}
-          className="bg-bg-dark text-white border border-border rounded px-2 py-1 text-sm"
-        >
+        <button type="button" onClick={() => setScale((s) => Math.min(s * 1.25, 1))} title="Zoom in">
           +
         </button>
-        <button
-          onClick={() => setScale((s) => Math.max(s * 0.8, 0.005))}
-          className="bg-bg-dark text-white border border-border rounded px-2 py-1 text-sm"
-        >
+        <button type="button" onClick={() => setScale((s) => Math.max(s * 0.8, 0.005))} title="Zoom out">
           −
         </button>
       </div>
-      <canvas ref={canvasRef} className="w-full h-full block" />
-    </div>
+
+      <canvas ref={canvasRef} />
+    </>
   );
 }
