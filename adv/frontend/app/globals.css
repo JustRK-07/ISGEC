@@ -2713,6 +2713,38 @@ body.signed-in .app-shell { display: flex; }
   height: 100%;
   display: block;
 }
+.viewer-canvas-app canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.viewer-canvas-app .ws-tabs-drawings {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  gap: 6px;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-1);
+  padding: 4px;
+  z-index: 4;
+}
+.viewer-canvas-app .ws-tab-drawing {
+  background: transparent;
+  border: 0;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: var(--r-1);
+}
+.viewer-canvas-app .ws-tab-drawing:hover { background: var(--paper-2); color: var(--ink); }
+.viewer-canvas-app .ws-tab-drawing.active { background: var(--ink); color: var(--cyan-pale); }
 .viewer-canvas-app .canvas-tool {
   position: absolute;
   background: var(--paper);
