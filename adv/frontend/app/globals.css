@@ -2003,7 +2003,8 @@ body.signed-in { background: var(--ink); }
   overflow-y: auto;
   font-family: var(--font-body);
 }
-body.uploading .upload-modal { display: flex; }
+body.uploading .upload-modal,
+.upload-modal.open { display: flex; }
 
 .upload-card {
   width: 100%;
@@ -2681,6 +2682,8 @@ body.signed-in .app-shell { display: flex; }
   cursor: pointer;
   border-radius: var(--r-1);
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .viewer-toolbar .vt-btn:hover { background: var(--paper); border-color: var(--ink); color: var(--ink); }
 .viewer-toolbar .vt-zoom {
