@@ -1,5 +1,44 @@
 # ISGEC — TP-104 Conveyor Overlay Pipeline
 
+## Web UI
+
+This repository also includes the standalone upload and review application:
+
+- `frontend/` — Next.js web UI
+- `backend/` — FastAPI upload, parsing, and analysis API
+- `docker-compose.yml` — starts both services together
+
+With Docker installed, run from the repository root:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Open <http://localhost:3001>. Uploaded drawings and the SQLite database are
+stored in Docker-managed volumes and are independent of any parent directory.
+
+For local development without Docker:
+
+```bash
+cd backend
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+In a second terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --hostname 0.0.0.0 --port 3001
+```
+
+The frontend automatically uses the backend at port `8001`; set
+`NEXT_PUBLIC_API_BASE` if the API is hosted elsewhere.
+
 This directory contains 3 self-contained overlay pipelines for the
 **TP-104 conveyor** project (ISGEC / Adani Infra / Dhamra Port). Each
 takes the same two source drawings and produces a structurally different
