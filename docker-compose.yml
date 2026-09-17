@@ -3,12 +3,12 @@ services:
     build: ./backend
     container_name: adv-backend
     ports:
-      - "8001:8001"
+      - "${ISGEC_BACKEND_PORT:-8001}:8001"
     environment:
       DATABASE_URL: sqlite:////data/isgec.db
       DATA_DIR: /data
       UPLOAD_DIR: /uploads
-      CORS_ORIGINS: http://localhost:3001
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OLLAMA_BASE_URL: http://ollama:11434
@@ -21,9 +21,9 @@ services:
     build: ./frontend
     container_name: adv-frontend
     ports:
-      - "3001:3001"
+      - "${ISGEC_FRONTEND_PORT:-3001}:3001"
     environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8001
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8001}
     depends_on:
       - backend
     restart: unless-stopped
