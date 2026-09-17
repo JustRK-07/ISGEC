@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Overlay TP-104 STR onto TP-104 MECH using a fitted affine transform.
 
 Uses ezdxf's official Importer addon (designed for cross-document transfers).
@@ -11,9 +13,9 @@ Transform: x_m = 0.8 * x_s + 208739.144
 import ezdxf
 from ezdxf.addons.importer import Importer
 
-MECH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean3.dxf"
-STR  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
-OUT  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 OVERLAY.dxf"
+MECH = ROOT / "dxf/TP-104 MECH GA_clean3.dxf"
+STR   = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
+OUT = ROOT / "dxf/TP-104 OVERLAY.dxf"
 
 SCALE = 1.0
 TX    = 208247.0

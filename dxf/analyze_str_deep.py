@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Deep-dive: find WIPEOUTs (masking rectangles), check layer colors (for green dim
 lines), and locate any LINE entities outside GridLine-* blocks that look like
 annotation/dimension residue."""
@@ -6,7 +8,7 @@ annotation/dimension residue."""
 import ezdxf
 from collections import Counter, defaultdict
 
-PATH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean.dxf"
+PATH = ROOT / "dxf/TP-104 STR GA_clean.dxf"
 doc = ezdxf.readfile(PATH)
 
 # 1. Layer table: which layers exist and what ACI color

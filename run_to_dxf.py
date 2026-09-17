@@ -33,7 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ISGEC = Path("/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC")
+ISGEC = Path(__file__).resolve().parent
 DXF_DIR = ISGEC / "dxf"
 
 MECH_INPUT = DXF_DIR / "TP-104 MECH GA_clean3.dxf"

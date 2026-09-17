@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Compute the affine transform to overlay STR onto MECH using the ACTUAL
 grid axis line coordinates (not text label positions which are offset).
 
@@ -19,8 +21,8 @@ import re
 import numpy as np
 
 GRID_RE = re.compile(r"^\s*TP104-([A-D1-3])\s*$")
-MECH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean2.dxf"
-STR  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
+MECH = ROOT / "dxf/TP-104 MECH GA_clean2.dxf"
+STR   = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
 
 
 # ---- STR axis X and Y for each label --------------------------------------

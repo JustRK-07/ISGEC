@@ -33,7 +33,7 @@ from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 from PIL import Image
 
-ISGEC = Path("/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC")
+ISGEC = Path(__file__).resolve().parent
 
 # Crop to the conveyor area (skip the corrupt RTR block at y=1.4M)
 X_MIN, X_MAX = 200000, 320000

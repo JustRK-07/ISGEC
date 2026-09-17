@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Strip leftover annotations from TP-104 STR GA_clean.dxf.
 
 REMOVES (top-level INSERTs and their block definitions):
@@ -23,8 +25,8 @@ import ezdxf
 import re
 from collections import Counter
 
-SRC = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean.dxf"
-DST = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
+SRC = ROOT / "dxf/TP-104 STR GA_clean.dxf"
+DST = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
 
 # Block-name prefixes to remove
 REMOVE_PREFIXES = (

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Build TP-104 OVERLAY_2block.dxf — Approach B from the docs.
 
 Structure:
@@ -24,9 +26,9 @@ by up to 4217 units. The new 1.0-scale transform gives:
 import ezdxf
 from ezdxf.addons.importer import Importer
 
-MECH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean3.dxf"
-STR  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
-OUT  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 OVERLAY_2block.dxf"
+MECH = ROOT / "dxf/TP-104 MECH GA_clean3.dxf"
+STR   = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
+OUT = ROOT / "dxf/TP-104 OVERLAY_2block.dxf"
 
 SCALE = 1.0
 TX    = 208247.0

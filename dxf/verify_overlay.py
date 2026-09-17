@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+ROOT = Path(__file__).resolve().parents[1]
 """Verify that TP-104 OVERLAY.dxf has STR and MECH geometry coincident at every
 TP104-* grid intersection.
 
@@ -15,7 +16,7 @@ import numpy as np
 from collections import defaultdict
 from pathlib import Path
 
-OVERLAY = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 OVERLAY.dxf"
+OVERLAY = ROOT / "dxf/TP-104 OVERLAY.dxf"
 
 doc = ezdxf.readfile(OVERLAY)
 ms = doc.modelspace()

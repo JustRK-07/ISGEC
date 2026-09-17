@@ -10,7 +10,7 @@ from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 from PIL import Image, ImageDraw
 
-ISGEC = Path("/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC")
+ISGEC = Path(__file__).resolve().parent
 OUT_DIR = ISGEC / "render"
 OUT_DIR.mkdir(exist_ok=True)
 

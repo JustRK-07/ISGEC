@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Compute the affine transform (scale + translation) needed to overlay
 TP-104 STR onto TP-104 MECH so the grid axes align.
 
@@ -69,8 +71,8 @@ def str_label_positions(path):
 
 # ---- collect --------------------------------------------------------------
 
-MECH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean2.dxf"
-STR  = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
+MECH = ROOT / "dxf/TP-104 MECH GA_clean2.dxf"
+STR   = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
 
 mech = mech_label_positions(MECH)
 str_ = str_label_positions(STR)

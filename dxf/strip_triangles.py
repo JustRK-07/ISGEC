@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Strip the orphaned ACM_FILLED_HALF symbol (block A$C2135de20) from the
 cleaned MECH DXF.
 
@@ -24,8 +26,8 @@ A$C1f4f58bd and A$Cde9606d0 (other anonymous compound components).
 
 import ezdxf
 
-SRC = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean2.dxf"
-DST = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 MECH GA_clean3.dxf"
+SRC = ROOT / "dxf/TP-104 MECH GA_clean2.dxf"
+DST = ROOT / "dxf/TP-104 MECH GA_clean3.dxf"
 
 BLOCK_NAME = "A$C2135de20"
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Validate the stripped STRUCTURE file.
 
 Checks:
@@ -14,7 +16,7 @@ import ezdxf
 import re
 from collections import Counter
 
-PATH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean3.dxf"
+PATH = ROOT / "dxf/TP-104 STR GA_clean3.dxf"
 GRID_RE = re.compile(r"TP104[-\s]?[A-D1-3]\b", re.I)
 EXPECTED_GRID = {"TP104-A", "TP104-B", "TP104-C", "TP104-D", "TP104-1", "TP104-2", "TP104-3"}
 

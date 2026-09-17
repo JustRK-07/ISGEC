@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
 """Analyze the STRUCTURE DXF for annotation leftovers, hexagons, dimension lines,
 and any non-essential shapes — same audit we did for MECH."""
 
@@ -7,7 +9,7 @@ from collections import Counter, defaultdict
 import json
 import re
 
-PATH = "/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC/dxf/TP-104 STR GA_clean.dxf"
+PATH = ROOT / "dxf/TP-104 STR GA_clean.dxf"
 
 doc = ezdxf.readfile(PATH)
 msp = doc.modelspace()

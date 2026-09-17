@@ -24,7 +24,7 @@ from pathlib import Path
 
 import ezdxf
 
-ISGEC = Path("/home/rushabh/Desktop/Rushabh New Laptop Files/desktop/Rushabh/edi_sem_5/ISGEC")
+ISGEC = Path(__file__).resolve().parent
 APPROACHES = ["A", "B", "C"]
 
 
