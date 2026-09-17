@@ -61,7 +61,7 @@ def link_inputs(approach):
         dst = work / src.name
         if dst.exists() or dst.is_symlink():
             dst.unlink()
-        os.symlink(str(src), str(dst))
+        os.symlink(os.path.relpath(src, work), str(dst))
 
 
 def run_overlay_only(approach):
