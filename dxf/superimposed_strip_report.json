@@ -1,0 +1,171 @@
+{
+  "input": {
+    "path": "./ISGEC/dxf/superimposed.dxf",
+    "size_bytes": 8270088
+  },
+  "output": {
+    "path": "./ISGEC/dxf/superimposed_clean.dxf",
+    "size_bytes": 7262088
+  },
+  "removed_total": {
+    "TEXT": 20
+  },
+  "kept_total": {
+    "CLASS": 90,
+    "TABLE": 9,
+    "VPORT": 1,
+    "ENDTAB": 9,
+    "LTYPE": 26,
+    "LAYER": 31,
+    "STYLE": 9,
+    "APPID": 39,
+    "DIMSTYLE": 14,
+    "BLOCK_RECORD": 372,
+    "BLOCK": 372,
+    "ENDBLK": 372,
+    "LINE": 24483,
+    "WIPEOUT": 4,
+    "ARC": 660,
+    "CIRCLE": 775,
+    "HATCH": 344,
+    "SPLINE": 86,
+    "ELLIPSE": 28,
+    "SOLID": 6,
+    "INSERT": 367,
+    "VIEWPORT": 2,
+    "DICTIONARY": 800,
+    "SUN": 2,
+    "ACAD_PROXY_OBJECT": 72,
+    "XRECORD": 47,
+    "FIELDLIST": 1,
+    "ACDBDICTIONARYWDFLT": 1,
+    "WIPEOUTVARIABLES": 1,
+    "SORTENTSTABLE": 3,
+    "ACDBDETAILVIEWSTYLE": 3,
+    "LAYOUT": 3,
+    "MATERIAL": 3,
+    "MLEADERSTYLE": 1,
+    "MLINESTYLE": 1,
+    "ACDBPLACEHOLDER": 1,
+    "SCALE": 34,
+    "ACDBSECTIONVIEWSTYLE": 3,
+    "TABLESTYLE": 1,
+    "VISUALSTYLE": 24,
+    "DICTIONARYVAR": 31,
+    "FIELD": 369,
+    "CELLSTYLEMAP": 1
+  },
+  "removed_by_layer": {
+    "7": {
+      "TEXT": 4
+    },
+    "10": {
+      "TEXT": 7
+    },
+    "TEXT": {
+      "TEXT": 9
+    }
+  },
+  "removed_text_samples": [
+    [
+      "7",
+      "TEXT",
+      "PLAN AT CD. +13.150M"
+    ],
+    [
+      "7",
+      "TEXT",
+      "SCALE"
+    ],
+    [
+      "7",
+      "TEXT",
+      "1:40"
+    ],
+    [
+      "7",
+      "TEXT",
+      "ALL PLAN BRACE ARE 100M BELOW (TOS)"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-A"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-C"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-B"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-D"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-3"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-2"
+    ],
+    [
+      "10",
+      "TEXT",
+      "TP104-1"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "%%UFLOOR PLAN AT LVL CD(+)13.150M (T.O.S)"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "(SCALE-1:75)"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-1"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-3"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-2"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-A"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-C"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-D"
+    ],
+    [
+      "TEXT",
+      "TEXT",
+      "TP104-B"
+    ]
+  ]
+}
