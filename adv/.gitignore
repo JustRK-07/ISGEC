@@ -49,3 +49,10 @@ yarn-error.log*
 
 # OS
 Thumbs.db
+
+# Local screenshots / captures (regenerated on demand; never commit)
+screenshots/
+**/screenshots/**/*.png
+**/screenshots/**/*.jpg
+**/screenshots/**/*.mp4
+**/screenshots/**/*.webm

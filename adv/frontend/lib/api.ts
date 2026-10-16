@@ -64,8 +64,30 @@ export interface EntityOut {
     center?: { x: number; y: number } | null;
     vertices?: Array<{ x: number; y: number }> | null;
     radius?: number | null;
+    startAngle?: number | null;
+    endAngle?: number | null;
+    closed?: boolean | null;
     insUnits?: number | null;
   } | null;
+}
+
+export interface ProjectEventOut {
+  id: string;
+  projectId: string;
+  category: string;
+  code: string;
+  tone: "info" | "ok" | "warn" | "fail";
+  message: string;
+  payload: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+export interface CheckOut {
+  id: string;
+  name: string;
+  meta: string;
+  state: "ok" | "warn" | "fail";
+  count: number;
 }
 
 export interface ProjectDetail extends ProjectSummary {
@@ -84,17 +106,43 @@ export interface ProjectDetail extends ProjectSummary {
     startedAt: number | null;
     finishedAt: number | null;
   };
+  checks: CheckOut[];
+  events: ProjectEventOut[];
 }
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
   (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8001` : "http://localhost:8001");
 
+export function extractDetail(body: unknown): string {
+  if (!body) return "";
+  if (typeof body === "string") return body;
+  if (typeof body !== "object") return "";
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return "";
+        const item = entry as { loc?: unknown; msg?: unknown };
+        const location = Array.isArray(item.loc) ? item.loc.join(".") : "";
+        const message = typeof item.msg === "string" ? item.msg : "";
+        return location && message ? `${location}: ${message}` : message;
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  const fallback = body as { error?: unknown; message?: unknown };
+  if (typeof fallback.error === "string") return fallback.error;
+  if (typeof fallback.message === "string") return fallback.message;
+  return "";
+}
+
 async function handle<T>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") || "";
   const body = ct.includes("application/json") ? await res.json() : await res.text();
   if (!res.ok) {
-    const msg = (body && (body.error || body.message)) || `HTTP ${res.status}`;
+    const msg = extractDetail(body) || `HTTP ${res.status}`;
     const err = new Error(msg);
     (err as Error & { status?: number }).status = res.status;
     throw err;
@@ -106,34 +154,42 @@ export const api = {
   base: API_BASE,
 
   listProjects(): Promise<ProjectSummary[]> {
-    return fetch(`${API_BASE}/api/projects`).then(handle);
+    return fetch(`${API_BASE}/api/projects`).then((res) => handle<ProjectSummary[]>(res));
   },
 
   getProject(id: string): Promise<ProjectDetail> {
-    return fetch(`${API_BASE}/api/projects/${id}`).then(handle);
+    return fetch(`${API_BASE}/api/projects/${id}`).then((res) => handle<ProjectDetail>(res));
   },
 
   createProject(formData: FormData): Promise<ProjectSummary> {
-    return fetch(`${API_BASE}/api/projects`, { method: "POST", body: formData }).then(handle);
+    return fetch(`${API_BASE}/api/projects`, { method: "POST", body: formData }).then((res) =>
+      handle<ProjectSummary>(res),
+    );
   },
 
   deleteProject(id: string): Promise<{ ok: boolean }> {
-    return fetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" }).then(handle);
+    return fetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" }).then((res) =>
+      handle<{ ok: boolean }>(res),
+    );
   },
 
   triggerAnalysis(projectId: string): Promise<{ status: string }> {
-    return fetch(`${API_BASE}/api/projects/${projectId}/analyze`, { method: "POST" }).then(handle);
+    return fetch(`${API_BASE}/api/projects/${projectId}/analyze`, { method: "POST" }).then((res) =>
+      handle<{ status: string }>(res),
+    );
   },
 
   getAnalysisStatus(projectId: string): Promise<ProjectDetail["analysis"]> {
-    return fetch(`${API_BASE}/api/projects/${projectId}/analysis`).then(handle);
+    return fetch(`${API_BASE}/api/projects/${projectId}/analysis`).then((res) =>
+      handle<ProjectDetail["analysis"]>(res),
+    );
   },
 
-  patchIssue(id: string, body: { state?: string; assigned?: string }) {
+  patchIssue(id: string, body: { state?: string; assigned?: string }): Promise<IssueOut> {
     return fetch(`${API_BASE}/api/issues/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).then(handle);
+    }).then((res) => handle<IssueOut>(res));
   },
 };

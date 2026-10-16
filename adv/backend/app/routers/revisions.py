@@ -19,6 +19,7 @@ from app.models.file import File as FileModel
 from app.models.project import Project
 from app.models.revision import Revision
 from app.services import revisions as rev_service
+from app.services.events import emit_event
 from app.utils.storage import persist_upload
 
 router = APIRouter(prefix="/api/projects", tags=["revisions"])
@@ -51,6 +52,16 @@ async def upload_revision(
             uploaded_by=uploaded_by,
         )
     except rev_service.DuplicateRevision as e:
+        emit_event(
+            db,
+            project_id,
+            "revision.duplicate",
+            f"Duplicate revision ignored: {file.filename}.",
+            tone="warn",
+            payload={"filename": file.filename, "revisionId": e.revision_id},
+            dedupe_key=f"revision.duplicate:{stored.sha256}",
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -73,6 +84,15 @@ async def upload_revision(
             stored_path=stored.stored_path,
             parse_status="pending",
         )
+    )
+    emit_event(
+        db,
+        project_id,
+        "revision.registered",
+        f"Revision {rev.revision_letter} registered for {file.filename}.",
+        tone="ok",
+        payload={"filename": file.filename, "revisionId": rev.id, "letter": rev.revision_letter},
+        dedupe_key=f"revision.registered:{rev.id}",
     )
     db.commit()
 

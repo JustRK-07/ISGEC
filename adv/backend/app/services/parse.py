@@ -9,10 +9,15 @@ swap in ezdxf for cleaner upstream parsing once production traffic validates.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from app.services import dwg_convert
+
+logger = logging.getLogger(__name__)
 
 # AutoCAD $INSUNITS → multiplier to convert to millimetres.
 # 0 = unitless, 1 = inches, 2 = feet, 4 = mm, 5 = cm, 6 = metres
@@ -24,6 +29,31 @@ INSUNITS_TO_MM: dict[int, float] = {
     5: 10,
     6: 1000,
 }
+
+# DXF entity types that carry real geometry (lines, text, polylines, etc.).
+# Anything outside this set (DICTIONARY, FIELD, XRECORD, LAYOUT, ...) lives in
+# the OBJECTS/TABLES section and has no spatial meaning — we skip them so the
+# canvas only sees renderable geometry.
+_GEOMETRY_ENTITY_TYPES: frozenset[str] = frozenset({
+    "LINE",
+    "LWPOLYLINE",
+    "POLYLINE",
+    "CIRCLE",
+    "ARC",
+    "ELLIPSE",
+    "SPLINE",
+    "TEXT",
+    "MTEXT",
+    "INSERT",
+    "ATTRIB",
+    "ATTDEF",
+    "HATCH",
+    "SOLID",
+    "3DFACE",
+    "DIMENSION",
+    "LEADER",
+    "POINT",
+})
 
 # DWG version tags — every real DWG starts with one of these
 DWG_VERSIONS: dict[str, str] = {
@@ -59,16 +89,26 @@ class ParsedDrawing:
     error: str | None = None
 
 
-def parse_file(file_path: str | Path, original_name: str | None = None) -> ParsedDrawing:
-    """Top-level dispatcher — picks the parser based on extension."""
+def parse_file(
+    file_path: str | Path,
+    original_name: str | None = None,
+    max_primitives: int = 50_000,
+) -> ParsedDrawing:
+    """Top-level dispatcher — picks the parser based on extension.
+
+    ``max_primitives`` is the backstop on INSERT expansion in Revit-style 3D
+    exports where every primitive lives inside a block. If the cap is hit
+    the parser emits ``parse_meta.truncatedInserts = True`` and stops
+    expanding.
+    """
     name = original_name or str(file_path)
     ext = Path(name).suffix.lower()
     data = Path(file_path).read_bytes()
 
     if ext == ".dxf":
-        return _parse_dxf(data, name)
+        return _parse_dxf(data, name, max_primitives=max_primitives)
     if ext == ".dwg":
-        return _parse_dwg(data, name, str(file_path))
+        return _parse_dwg(data, name, str(file_path), max_primitives=max_primitives)
     if ext == ".ifc":
         return _parse_ifc(data, name)
     if ext == ".pdf":
@@ -81,7 +121,7 @@ def parse_file(file_path: str | Path, original_name: str | None = None) -> Parse
 # --------------------------------------------------------------------------- #
 
 
-def _parse_dxf(buf: bytes, name: str) -> ParsedDrawing:
+def _parse_dxf(buf: bytes, name: str, max_primitives: int = 50_000) -> ParsedDrawing:
     text = buf.decode("utf-8", errors="replace")
     lines = text.splitlines()
 
@@ -120,21 +160,36 @@ def _parse_dxf(buf: bytes, name: str) -> ParsedDrawing:
             if k + 1 < len(tokens) and tokens[k + 1][0] == 70:
                 ins_units = int(tokens[k + 1][1])
 
-    # Pass 1 — walk ENTITIES / BLOCKS section
+    # Pass 1 — walk BLOCKS + ENTITIES sections.
+    # Block definitions are captured into ``blocks`` (so Pass 2 can expand
+    # INSERTs in the modelspace), and modelspace entities land in ``entities``.
     entities: list[dict] = []
+    blocks: dict[str, _BlockDef] = {}
     i = 0
     in_entities = False
+    current_section: str | None = None  # 'BLOCKS' | 'ENTITIES' | None
     block_depth = 0
     in_model_block = False
     last_entity_start = -1
+    current_block: _BlockDef | None = None
     while i < len(tokens):
         code, value = tokens[i]
+        if code == 0 and value == "EOF":
+            break
         if code == 2 and value in ("ENTITIES", "BLOCKS"):
+            current_section = value
             in_entities = True
             i += 1
             continue
-        if in_entities and code == 0 and value in ("ENDSEC", "EOF"):
-            break
+        if in_entities and code == 0 and value == "ENDSEC":
+            # End of the current section (BLOCKS or ENTITIES). Reset to None
+            # so subsequent sections (e.g. ENTITIES after BLOCKS) are picked up.
+            current_section = None
+            current_block = None
+            block_depth = 0
+            in_model_block = False
+            i += 1
+            continue
         if in_entities and code == 0 and value == "BLOCK":
             # peek for the block name
             block_name = ""
@@ -146,28 +201,79 @@ def _parse_dxf(buf: bytes, name: str) -> ParsedDrawing:
                     break
             if block_name.startswith("*"):
                 in_model_block = True
+                current_block = None  # do not capture anonymous model/paper blocks
             else:
                 block_depth += 1
+                current_block = _BlockDef(name=block_name, base_point={"x": 0.0, "y": 0.0, "z": 0.0}, entities=[])
+                # Capture the block's base point (codes 10/20/30 follow the
+                # BLOCK code-0 row before any entity inside).
+                for j in range(i + 1, min(i + 20, len(tokens))):
+                    if tokens[j][0] == 0:
+                        break
+                    if tokens[j][0] == 10:
+                        try:
+                            current_block.base_point["x"] = float(tokens[j][1])
+                        except ValueError:
+                            pass
+                    elif tokens[j][0] == 20:
+                        try:
+                            current_block.base_point["y"] = float(tokens[j][1])
+                        except ValueError:
+                            pass
+                    elif tokens[j][0] == 30:
+                        try:
+                            current_block.base_point["z"] = float(tokens[j][1])
+                        except ValueError:
+                            pass
+                blocks[block_name] = current_block
             i += 1
             continue
         if in_entities and code == 0 and value == "ENDBLK":
             if block_depth > 0:
                 block_depth -= 1
+                current_block = None
             elif in_model_block:
                 in_model_block = False
+                current_block = None
             i += 1
             continue
         if in_entities and code == 0:
-            if i > last_entity_start:
-                result = _parse_entity(tokens, i)
-                if result is not None:
-                    rec, next_i = result
-                    entities.append(rec)
-                    last_entity_start = i
-                    i = next_i
-                    continue
-            last_entity_start = i
+            # Only walk the geometry entity types. Other DXF object types
+            # (DICTIONARY, FIELD, XRECORD, ...) live in OBJECTS / TABLES
+            # sections and have no real geometry; reading them pollutes the
+            # entity list and confuses downstream consumers.
+            if value in _GEOMETRY_ENTITY_TYPES:
+                if i > last_entity_start:
+                    result = _parse_entity(tokens, i)
+                    if result is not None:
+                        rec, next_i = result
+                        if current_section == "BLOCKS" and current_block is not None:
+                            # Tag with the owning block so the classifier can use
+                            # block-name rules (e.g. Part-* → beam).
+                            rec["blockName"] = current_block.name
+                            current_block.entities.append(rec)
+                        else:
+                            entities.append(rec)
+                        last_entity_start = i
+                        i = next_i
+                        continue
+            elif value not in ("BLOCK", "ENDBLK", "ENDSEC", "EOF", "INSERT"):
+                # Skip non-geometry rows within ENTITIES (e.g. DICTIONARY).
+                # Move past this entity by consuming tokens until the next
+                # code-0 row so we don't misattribute child codes.
+                j = i + 1
+                while j < len(tokens) and tokens[j][0] != 0:
+                    j += 1
+                last_entity_start = j - 1
+                i = j
+                continue
         i += 1
+
+    # Pass 2 — expand INSERTs in modelspace using captured block definitions.
+    # This is what turns Revit 3D exports (where every primitive lives inside a
+    # block) into renderable 2D geometry. No recursion into INSERT-inside-BLOCK
+    # (avoids exponential blow-up on pathological drawings).
+    entities, truncated = _expand_inserts(entities, blocks, max_primitives=max_primitives)
 
     # Build summary
     layer_counts: dict[str, int] = {}
@@ -183,6 +289,19 @@ def _parse_dxf(buf: bytes, name: str) -> ParsedDrawing:
         key=lambda d: -d["count"],
     )[:60]
 
+    parse_meta: dict = {
+        "kind": "dxf",
+        "parser": "custom",
+        "entityCount": len(entities),
+        "layers": layers,
+        "headerUnits": ins_units,
+        "textLabels": labels[:200],
+    }
+    if truncated:
+        parse_meta["truncatedInserts"] = True
+    if blocks:
+        parse_meta["blockDefs"] = len(blocks)
+
     return ParsedDrawing(
         ok=True,
         kind="dxf",
@@ -191,14 +310,7 @@ def _parse_dxf(buf: bytes, name: str) -> ParsedDrawing:
         layers=layers,
         text_labels=labels[:200],
         header={"$INSUNITS": ins_units},
-        parse_meta={
-            "kind": "dxf",
-            "parser": "custom",
-            "entityCount": len(entities),
-            "layers": layers,
-            "headerUnits": ins_units,
-            "textLabels": labels[:200],
-        },
+        parse_meta=parse_meta,
     )
 
 
@@ -226,6 +338,9 @@ def _parse_entity(tokens: list[tuple[int, str]], i: int) -> tuple[dict, int] | N
             break
         if code == 8:
             rec["layer"] = value
+        elif code == 2 and entity_type == "INSERT":
+            # Block name for INSERT entities (code 2 only after the type row).
+            rec["blockName"] = value
         elif code == 10:
             x = float(value)
             if is_poly and rec["vertices"] and not last_vert_set:
@@ -236,14 +351,20 @@ def _parse_entity(tokens: list[tuple[int, str]], i: int) -> tuple[dict, int] | N
                 has_pos = True
                 if is_poly and not rec["vertices"]:
                     rec["vertices"].append({"x": x, "y": 0.0})
+                if entity_type == "INSERT":
+                    rec["insertPoint"] = {"x": x, "y": pos["y"], "z": pos["z"]}
                 last_vert_set = False
         elif code == 20:
             y = float(value)
             if is_poly and rec["vertices"]:
                 rec["vertices"][-1]["y"] = y
             pos["y"] = y
+            if entity_type == "INSERT" and "insertPoint" in rec:
+                rec["insertPoint"]["y"] = y
         elif code == 30:
             pos["z"] = float(value)
+            if entity_type == "INSERT" and "insertPoint" in rec:
+                rec["insertPoint"]["z"] = float(value)
         elif code == 11:
             end_pt["x"] = float(value)
             has_end = True
@@ -258,9 +379,22 @@ def _parse_entity(tokens: list[tuple[int, str]], i: int) -> tuple[dict, int] | N
         elif code in (1, 3):
             text_buf.append(value)
         elif code == 50:
-            rec["rotation"] = float(value)
+            if entity_type == "ARC":
+                rec["startAngle"] = float(value)
+            else:
+                rec["rotation"] = float(value)
+        elif code == 51 and entity_type == "ARC":
+            rec["endAngle"] = float(value)
         elif code == 41:
-            rec["scale"] = float(value)
+            # INSERT scale X (code 41); also used for other entities' scale.
+            if entity_type == "INSERT":
+                rec["scaleX"] = float(value) if value else 1.0
+            else:
+                rec["scale"] = float(value)
+        elif code == 42:
+            # INSERT scale Y.
+            if entity_type == "INSERT":
+                rec["scaleY"] = float(value) if value else 1.0
         elif code == 70:
             rec["flags"] = int(value)
         elif code == 90:
@@ -287,7 +421,7 @@ def _parse_entity(tokens: list[tuple[int, str]], i: int) -> tuple[dict, int] | N
 # --------------------------------------------------------------------------- #
 
 
-def _parse_dwg(buf: bytes, name: str, file_path: str) -> ParsedDrawing:
+def _parse_dwg(buf: bytes, name: str, file_path: str, max_primitives: int = 50_000) -> ParsedDrawing:
     sig = buf[:6].decode("ascii", errors="replace")
     version = DWG_VERSIONS.get(sig)
     if not version:
@@ -309,8 +443,8 @@ def _parse_dwg(buf: bytes, name: str, file_path: str) -> ParsedDrawing:
     pipe_re = re.compile(r"\b(?:DN|NPS|Ø)\s?\d{2,4}\b")
     pipes = list(dict.fromkeys(pipe_re.findall(ascii_text)))[:20]
 
-    # Attempt real conversion via ezdxf's addons.dwg2dxf if available.
-    full_parse = _convert_dwg_with_ezdxf(file_path, name)
+    # Attempt real conversion via system libredwg binary.
+    full_parse = _convert_dwg_with_libredwg(file_path, name, max_primitives=max_primitives)
     if full_parse is not None and full_parse.ok:
         full_parse.parse_meta = {
             **full_parse.parse_meta,
@@ -321,10 +455,15 @@ def _parse_dwg(buf: bytes, name: str, file_path: str) -> ParsedDrawing:
             "layerCandidates": layer_candidates,
             "elevations": elevations,
             "pipes": pipes,
-            "conversion": "ezdxf",
+            "conversion": "libredwg",
         }
         return full_parse
 
+    note = (
+        "libredwg dwg2dxf not available"
+        if not dwg_convert.libredwg_available()
+        else "libredwg conversion failed; sent metadata to LLM."
+    )
     return ParsedDrawing(
         ok=True,
         kind="dwg",
@@ -336,25 +475,44 @@ def _parse_dwg(buf: bytes, name: str, file_path: str) -> ParsedDrawing:
             "layerCandidates": layer_candidates,
             "elevations": elevations,
             "pipes": pipes,
-            "note": "ezdxf dwg2dxf not available; sent metadata to LLM.",
+            "note": note,
         },
         header={"dwgVersion": version},
     )
 
 
-def _convert_dwg_with_ezdxf(file_path: str, name: str) -> ParsedDrawing | None:
-    """Try ezdxf's addons.dwg2dxf (requires libredwg installed)."""
-    try:
-        from ezdxf.addons import dwg2dxf  # type: ignore[import-not-found]
-    except ImportError:
+def _convert_dwg_with_libredwg(
+    file_path: str, name: str, max_primitives: int = 50_000
+) -> ParsedDrawing | None:
+    """Convert a DWG file to DXF using the system libredwg binary, then parse.
+
+    The produced DXF is written to a tempdir and unlinked after parsing. The
+    returned ``ParsedDrawing`` is identical in shape to a native DXF parse so
+    downstream code (analyze, rules, canvas) is agnostic to the source format.
+    """
+    converted = dwg_convert.convert_dwg_to_dxf(file_path, timeout_sec=60)
+    if converted is None:
         return None
     try:
-        # ezdxf exposes a high-level DWG→DXF converter.
-        result = dwg2dxf.convert(file_path)  # type: ignore[attr-defined]
-        if not result or not result.dxf_string:
-            return None
-        return _parse_dxf(result.dxf_string.encode("utf-8"), name)
-    except Exception:
+        dxf_bytes = converted.read_bytes()
+    except OSError:
+        return None
+    finally:
+        try:
+            converted.unlink(missing_ok=True)
+        except OSError:
+            pass
+        # Best-effort cleanup of the surrounding tempdir if it was empty.
+        parent = converted.parent
+        try:
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+        except OSError:
+            pass
+    try:
+        return _parse_dxf(dxf_bytes, name, max_primitives=max_primitives)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("DXF parse after libredwg conversion failed: %s", exc)
         return None
 
 
@@ -388,25 +546,246 @@ def _parse_pdf_stub(name: str) -> ParsedDrawing:
 # --------------------------------------------------------------------------- #
 
 
+@dataclass
+class _BlockDef:
+    """A DXF BLOCK definition captured during Pass 1 of _parse_dxf.
+
+    ``entities`` is the list of primitives (LINE, LWPOLYLINE, ...) that make
+    up the block body. ``base_point`` is the block's local origin (codes 10/20/30
+    of the BLOCK row) — INSERTs transform around this point, not (0, 0).
+    """
+
+    name: str
+    base_point: dict[str, float]
+    entities: list[dict] = field(default_factory=list)
+
+
+def _transform_point(
+    p: dict[str, float] | None,
+    insert_pt: dict[str, float],
+    scale_x: float,
+    scale_y: float,
+    rotation_deg: float,
+    base: dict[str, float],
+) -> dict[str, float] | None:
+    """Apply 2D affine OCS → world: scale, rotate, translate.
+
+    ``base`` is the block's local origin (subtracted before rotation so the
+    block rotates about its base point, then added back). INSERTs in 2D DXF
+    can carry a rotation in degrees (code 50); we honour it.
+    """
+    if p is None:
+        return None
+    x0 = (p.get("x") or 0.0) - (base.get("x") or 0.0)
+    y0 = (p.get("y") or 0.0) - (base.get("y") or 0.0)
+    sx = x0 * scale_x
+    sy = y0 * scale_y
+    if rotation_deg:
+        import math
+
+        theta = math.radians(rotation_deg)
+        cs = math.cos(theta)
+        sn = math.sin(theta)
+        rx = sx * cs - sy * sn
+        ry = sx * sn + sy * cs
+    else:
+        rx, ry = sx, sy
+    return {
+        "x": (insert_pt.get("x") or 0.0) + rx,
+        "y": (insert_pt.get("y") or 0.0) + ry,
+    }
+
+
+def _transformed_primitive(
+    prim: dict,
+    insert: dict,
+    base: dict[str, float],
+) -> dict:
+    """Apply an INSERT's transformation to one of the block's primitives.
+
+    Each primitive is a dict from Pass 1; we transform any (x, y) / (x, y, z)
+    coordinate it carries (position, startPoint, endPoint, center, vertices).
+    The block entity keeps its own layer if set, else inherits the INSERT's.
+    The block name is added to the ``meta`` so the classifier can apply
+    block-name rules.
+    """
+    sx = float(insert.get("scaleX") or 1.0)
+    sy = float(insert.get("scaleY") or 1.0)
+    rot = float(insert.get("rotation") or 0.0)
+    ip = insert.get("insertPoint") or {"x": 0.0, "y": 0.0}
+    insert_layer = insert.get("layer")
+
+    out = dict(prim)  # shallow copy
+
+    def xform(d: dict | None) -> dict | None:
+        return _transform_point(d, ip, sx, sy, rot, base)
+
+    if "position" in out and isinstance(out["position"], dict):
+        out["position"] = xform(out["position"])
+    if "startPoint" in out and isinstance(out["startPoint"], dict):
+        out["startPoint"] = xform(out["startPoint"])
+    if "endPoint" in out and isinstance(out["endPoint"], dict):
+        out["endPoint"] = xform(out["endPoint"])
+    if "center" in out and isinstance(out["center"], dict):
+        out["center"] = xform(out["center"])
+    if "vertices" in out and isinstance(out["vertices"], list):
+        out["vertices"] = [xform(v) if isinstance(v, dict) else v for v in out["vertices"]]
+    if "startAngle" in out:
+        out["startAngle"] = float(out["startAngle"]) + rot
+    if "endAngle" in out:
+        out["endAngle"] = float(out["endAngle"]) + rot
+
+    # Layer inheritance: block primitive keeps its own layer; otherwise fall
+    # back to the INSERT's layer (matches AutoCAD's effective layer).
+    if not out.get("layer") and insert_layer:
+        out["layer"] = insert_layer
+
+    # Tag the resulting primitive with the block it came from so the
+    # classifier can apply BLOCK_KIND_RULES.
+    block_name = out.get("blockName")
+    if block_name:
+        out["blockName"] = block_name
+    return out
+
+
+def _expand_inserts(
+    entities: list[dict],
+    blocks: dict[str, _BlockDef],
+    max_primitives: int = 50_000,
+) -> tuple[list[dict], bool]:
+    """Replace each INSERT in ``entities`` with the transformed primitives
+    from its block definition. Non-INSERT entities pass through unchanged.
+
+    Returns ``(out, truncated)`` where ``truncated`` is True if the expansion
+    hit ``max_primitives`` before all INSERTs were expanded.
+    """
+    if not blocks:
+        return entities, False
+    out: list[dict] = []
+    truncated = False
+    for ent in entities:
+        if ent.get("type") != "INSERT":
+            out.append(ent)
+            continue
+        block_name = ent.get("blockName")
+        if not block_name:
+            out.append(ent)
+            continue
+        block = blocks.get(block_name)
+        if block is None:
+            # Unknown block — pass the INSERT through; the canvas will render
+            # it as a small marker.
+            out.append(ent)
+            continue
+        for prim in block.entities:
+            if len(out) >= max_primitives:
+                truncated = True
+                break
+            out.append(_transformed_primitive(prim, ent, block.base_point))
+        if truncated:
+            break
+    return out, truncated
+
+
+
+
+
+# Layer-name → kind rules. Order matters: first match wins.
+# Each tuple is (needle, kind) where ``needle`` is a case-insensitive substring
+# matched against the layer name with spaces stripped. The list covers the layer
+# vocabulary observed in real DWG exports (MECH GA.dwg: PANTHOM/HIDDDEN typos,
+# MAIN OBJECT, BOX, AM_*, BELT, etc.) plus the original layer set the parser
+# supported. Adding a new rule at the END of the list keeps existing behaviour.
+LAYER_KIND_RULES: list[tuple[str, str]] = [
+    ("GRID", "grid-bubble"),
+    ("OPEN", "opening"),
+    ("PENETR", "opening"),
+    ("SLEEVE", "opening"),
+    ("BEAM", "beam"),
+    ("GIRDER", "beam"),
+    ("BM", "beam"),
+    ("COL", "column"),
+    ("PILLAR", "column"),
+    ("PIPE", "pipe"),
+    ("DUCT", "duct"),
+    ("EQUIP", "equipment"),
+    ("MECH", "equipment"),
+    ("MAIN OBJECT", "equipment"),
+    ("PANTHOM", "phantom"),   # observed typo in MECH GA.dwg
+    ("PHANTOM", "phantom"),
+    ("HIDDEN", "hidden"),
+    ("HIDDDEN", "hidden"),    # observed typo in MECH GA.dwg
+    ("CENTRE", "centerline"),
+    ("CENTER", "centerline"),
+    ("CEN", "centerline"),
+    ("AM_", "annotation"),
+    ("BELT", "annotation"),
+    ("SHEETING", "annotation"),
+    ("HANDRAIL", "annotation"),
+    ("CHUTE", "annotation"),
+    ("REV", "annotation"),
+    ("BOX", "annotation"),
+    ("DIM", "dimension"),
+    ("TXT-50", "annotation"),
+    ("TXT-", "annotation"),
+    ("TEXT_", "annotation"),         # TEXT_25, TEXT_2.5, TEXT_35 — large note text
+    ("ALL BOUGHT", "equipment"),     # third-party scope — treat like MAIN OBJECT
+    ("OBJECT", "equipment"),         # observed in MECH GA.dwg
+    ("STRUC", "brace"),              # STRUC-* layers carry bracing detail
+    ("CENETR", "centerline"),  # observed typo
+]
+
+# Block-name → kind rules. Block names are matched case-insensitively as a
+# prefix. Used for STR drawings exported from Revit where layer information is
+# lost (all entities sit on layer 0) but each INSERT points to a small block
+# whose name encodes the element category.
+BLOCK_KIND_RULES: list[tuple[str, str]] = [
+    ("Part-", "beam"),
+    ("Bolt-", "brace"),
+    ("Connection-", "brace"),
+    ("GridLine-", "gridline"),
+    ("Column-", "column"),
+    ("Beam-", "beam"),
+]
+
+# Layers whose entries should be dropped from the entity table entirely.
+# They're how AutoCAD stores construction geometry -- no visual meaning.
+SKIP_LAYERS: frozenset[str] = frozenset({
+    "DEFPOINTS",   # AutoCAD internal construction points
+})
+
+# Entity types that exist in modelspace as block-attribute scaffolding (no
+# visual contribution).
+SKIP_TYPES: frozenset[str] = frozenset({
+    "ATTRIB",
+    "ATTDEF",
+})
+
+
 def classify_dxf_entity(entity: dict) -> str:
     layer = (entity.get("layer") or "").upper()
     t = (entity.get("type") or "").upper()
     if t in ("TEXT", "MTEXT"):
         return "text"
-    if "GRID" in layer:
-        return "grid-bubble"
-    if "OPEN" in layer or "PENETR" in layer or "SLEEVE" in layer:
-        return "opening"
-    if "BEAM" in layer or "BM" in layer or "GIRDER" in layer:
-        return "beam"
-    if "COL" in layer or "PILLAR" in layer:
-        return "column"
-    if "PIPE" in layer:
-        return "pipe"
-    if "DUCT" in layer:
-        return "duct"
-    if "EQUIP" in layer or "MECH" in layer:
-        return "equipment"
+    # Layer-based classification runs BEFORE INSERT/BLOCK so that
+    # `INSERT` entities on a `EQUIP` layer still resolve to "equipment"
+    # (preserved from the original parser behaviour).
+    layer_compact = layer.replace(" ", "")
+    for needle, kind in LAYER_KIND_RULES:
+        # The rule table stores needles with their original spacing; we match
+        # against both the raw layer (so "MAIN OBJECT" hits the EQUIP rule
+        # with the space) and the compact form (so "PANTHOM" / "HIDDDEN"
+        # also work regardless of how the source wrote the layer).
+        if needle in layer or needle in layer_compact:
+            return kind
+    # Block-name classification (Revit-exported drawings).
+    block_name = (entity.get("blockName") or "").lower()
+    if block_name:
+        for prefix, kind in BLOCK_KIND_RULES:
+            if block_name.startswith(prefix.lower()):
+                return kind
+        if block_name.startswith("unknown-"):
+            return "unknown"
     if t == "INSERT":
         return "block"
     if t in ("BLOCK", "ENDBLK"):
@@ -450,8 +829,13 @@ def _entity_dims(entity: dict) -> dict:
 
 
 def _detect_sheet(layer: str) -> str:
+    """Find a 4-digit sheet code in the layer name. Falls back to ``"0001"``
+    so single-sheet DWGs (the common case) all end up on the first sheet
+    and the canvas's sheet filter doesn't strand them on a phantom
+    ``default`` sheet that the UI can't reach.
+    """
     m = re.search(r"(\d{4})", layer or "")
-    return m.group(1) if m else "default"
+    return m.group(1) if m else "0001"
 
 
 def _conv_pt(point: dict | None, factor: float) -> dict | None:
@@ -488,6 +872,13 @@ def dxf_to_entities(
     ins_units = parsed.header.get("$INSUNITS")
 
     for entity in parsed.entities:
+        # Drop construction-data entities that have no visual contribution:
+        #   * SKIP_LAYERS: how AutoCAD stores internal anchor points
+        #   * SKIP_TYPES: ATTRIB/ATTDEF scaffolding that follows blocks
+        if (entity.get("layer") or "").upper() in SKIP_LAYERS:
+            continue
+        if (entity.get("type") or "").upper() in SKIP_TYPES:
+            continue
         kind = classify_dxf_entity(entity)
         xy = _entity_centroid(entity)
         if xy is None:
@@ -523,6 +914,9 @@ def dxf_to_entities(
                     else None
                 ),
                 "radius": conv(entity.get("radius")),
+                "startAngle": entity.get("startAngle"),
+                "endAngle": entity.get("endAngle"),
+                "closed": bool((entity.get("flags") or 0) & 1),
                 "insUnits": ins_units,
             },
         }

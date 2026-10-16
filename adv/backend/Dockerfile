@@ -6,10 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps for ezdxf / libredwg / shapely
+# System deps for ezdxf / shapely (libredwg not available in trixie; ezdxf ships its own bindings)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libredwg-bin \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,6 +22,6 @@ COPY scripts ./scripts
 RUN mkdir -p /data /uploads
 ENV DATA_DIR=/data UPLOAD_DIR=/uploads
 
-EXPOSE 8000
+EXPOSE 8001
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

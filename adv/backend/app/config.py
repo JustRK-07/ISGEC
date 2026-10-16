@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Server
     backend_host: str = "0.0.0.0"
-    backend_port: int = 8000
+    backend_port: int = 8001
 
     # Storage
     data_dir: Path = Path("./data")
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = 100
 
     # CORS — comma-separated list
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
 
     # LLM
     llm_provider: str = Field(default="gemini")  # 'gemini' | 'ollama'
@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     label_match_radius_mm: float = 800.0
     # Fuzzy similarity threshold (Jaccard on 3-grams)
     fuzzy_match_threshold: float = 0.55
+
+    # DWG → DXF conversion (libredwg)
+    # "auto" resolves the binary from $LIBREDWG_BIN or known install roots.
+    libredwg_bin: str = "auto"
+    # Backstop on INSERT expansion to avoid pathological drawings blowing up
+    # the canvas. Real DWG files in this project emit 15-25k primitives from
+    # INSERT expansion; 50k is a generous safety margin.
+    max_insert_expansion: int = 50_000
 
     @property
     def cors_origin_list(self) -> list[str]:

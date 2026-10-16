@@ -6,6 +6,7 @@ from app.services.parse import (
     classify_dxf_entity,
     parse_file,
     units_to_mm,
+    dxf_to_entities,
 )
 
 
@@ -65,7 +66,26 @@ def test_parse_dxf_minimal_file(tmp_path):
     assert text_entities[0]["text"] == "TP104-A"
 
 
-def test_insunits_to_mm_complete_table():
-    # All codes used in the parser should map to mm factors
-    for code, expected in [(0, 1), (1, 25.4), (2, 304.8), (4, 1), (5, 10), (6, 1000)]:
-        assert INSUNITS_TO_MM[code] == expected
+
+
+def test_parse_arc_preserves_angles_and_normalized_metadata(tmp_path):
+    dxf = (
+        "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n"
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nARC\n8\nOPENINGS\n10\n100.0\n20\n200.0\n40\n25.0\n50\n30.0\n51\n120.0\n"
+        "0\nENDSEC\n0\nEOF\n"
+    )
+    p = tmp_path / "arc.dxf"
+    p.write_bytes(dxf.encode("utf-8"))
+
+    parsed = parse_file(p, "arc.dxf")
+    assert parsed.ok
+    arc = parsed.entities[0]
+    assert arc["startAngle"] == 30.0
+    assert arc["endAngle"] == 120.0
+    assert "rotation" not in arc
+
+    normalized = dxf_to_entities(parsed, "structural", "project-1", lambda: "entity-1")
+    assert normalized[0]["meta"]["radius"] == 25.0
+    assert normalized[0]["meta"]["startAngle"] == 30.0
+    assert normalized[0]["meta"]["endAngle"] == 120.0

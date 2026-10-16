@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.models.file import File
 from app.models.issue import Issue
 from app.services import llm_gemini, llm_ollama, parse, rules
+from app.services.events import emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,13 @@ def _find_file(files: list[File], discipline: str) -> File | None:
     return None
 
 
-def _ensure_parsed(file_row: File, data_dir: Path) -> parse.ParsedDrawing:
+def _ensure_parsed(file_row: File, data_dir: Path, max_primitives: int = 50_000) -> parse.ParsedDrawing:
     """Run the file parser + persist file-level metadata if it changed."""
     stored_path = Path(file_row.stored_path)
     # If the stored path is absolute, use it as-is; otherwise resolve
     # relative to the data_dir (legacy layout).
     full_path = stored_path if stored_path.is_absolute() else (data_dir / stored_path)
-    parsed = parse.parse_file(full_path, file_row.filename)
+    parsed = parse.parse_file(full_path, file_row.filename, max_primitives=max_primitives)
     prev_meta = json.loads(file_row.parse_meta) if file_row.parse_meta else {}
 
     if (
@@ -109,7 +110,13 @@ def _persist_entities(db: Session, project_id: str, entities: list[dict]) -> Non
     db.query(Entity).filter(Entity.project_id == project_id).delete()
     db.flush()
     for ent in entities:
-        db.add(Entity(**ent))
+        # Serialize the ``meta`` JSON column. The parser returns a dict; the
+        # column is Text so we encode here (matches the existing
+        # ``routers.projects.get_project`` path which json.loads on read).
+        row = dict(ent)
+        if row.get("meta") is not None and not isinstance(row["meta"], str):
+            row["meta"] = json.dumps(row["meta"])
+        db.add(Entity(**row))
     db.commit()
 
 
@@ -143,6 +150,95 @@ def _persist_issues(db: Session, project_id: str, findings: list[dict]) -> None:
     db.commit()
 
 
+def _persist_issues_reconciling(
+    db: Session,
+    project_id: str,
+    findings: list[dict],
+    *,
+    source: str = "deterministic",
+) -> None:
+    """Reconciliation-friendly issue persistence.
+
+    Preserves ``state``/``assigned``/``created_at``/``result_json`` on issues
+    that match a new run by ``(code, sheet, str_ref, mech_ref)`` (treating
+    absent refs as wildcards), avoids duplicate inserts from the LLM pass, and
+    records user-touched findings as ``obsolete`` instead of dropping them
+    outright so the audit trail is preserved across reanalyses.
+    """
+    from app.models.issue import Issue
+
+    now = int(time.time() * 1000)
+
+    def _fingerprint(finding: dict) -> tuple:
+        return (
+            finding.get("code"),
+            finding.get("sheet"),
+            finding.get("str_ref"),
+            finding.get("mech_ref"),
+        )
+
+    incoming: dict[tuple, dict] = {_fingerprint(f): f for f in findings}
+    if not incoming:
+        # Empty run → mark all still-open issues obsolete so the audit log
+        # explains the absence; leave resolved/dismissed alone.
+        for existing in db.query(Issue).filter(Issue.project_id == project_id).all():
+            if existing.state == "open":
+                existing.state = "obsolete"
+        db.commit()
+        return
+
+    existing = db.query(Issue).filter(Issue.project_id == project_id).all()
+    existing_by_key: dict[tuple, Issue] = {}
+    for issue in existing:
+        key = (issue.code, issue.sheet, issue.str_ref, issue.mech_ref)
+        existing_by_key.setdefault(key, issue)
+
+    for key, finding in incoming.items():
+        match = existing_by_key.get(key)
+        if match is not None:
+            match.severity = finding["severity"]
+            match.category = finding.get("category", match.category)
+            match.title = finding.get("title", match.title)
+            match.evidence = finding.get("evidence", match.evidence)
+            match.grid = finding.get("grid", match.grid)
+            match.formula = finding.get("formula", match.formula)
+            if finding.get("result_json") is not None:
+                match.result_json = json.dumps(finding["result_json"])
+            continue
+        db.add(
+            Issue(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                severity=finding["severity"],
+                category=finding.get("category", source),
+                code=finding["code"],
+                title=finding.get("title", ""),
+                evidence=finding.get("evidence"),
+                sheet=finding.get("sheet"),
+                grid=finding.get("grid"),
+                mech_ref=finding.get("mech_ref"),
+                str_ref=finding.get("str_ref"),
+                formula=finding.get("formula"),
+                result_json=json.dumps(finding.get("result_json"))
+                if finding.get("result_json") is not None
+                else None,
+                state="open",
+                assigned=None,
+                created_at=now,
+            )
+        )
+
+    seen = set(incoming.keys())
+    for issue in existing:
+        key = (issue.code, issue.sheet, issue.str_ref, issue.mech_ref)
+        if key in seen:
+            continue
+        if issue.state == "open":
+            issue.state = "obsolete"
+
+    db.commit()
+
+
 async def run_phase_1(db: Session, project_id: str) -> dict:
     settings = get_settings()
     _STATE[project_id] = AnalysisState(
@@ -155,6 +251,13 @@ async def run_phase_1(db: Session, project_id: str) -> dict:
     if not project:
         raise RuntimeError("Project not found")
     project.status = "processing"
+    emit_event(
+        db,
+        project_id,
+        "analyze.started",
+        "Deterministic QA/QC pipeline started.",
+        dedupe_key=f"analyze.started:{project_id}",
+    )
     db.commit()
 
     files = db.query(File).filter(File.project_id == project_id).all()
@@ -164,8 +267,8 @@ async def run_phase_1(db: Session, project_id: str) -> dict:
         raise RuntimeError("Project is missing STR or MECH file")
 
     data_dir = settings.data_dir
-    str_parsed = _ensure_parsed(str_file, data_dir)
-    mech_parsed = _ensure_parsed(mech_file, data_dir)
+    str_parsed = _ensure_parsed(str_file, data_dir, max_primitives=settings.max_insert_expansion)
+    mech_parsed = _ensure_parsed(mech_file, data_dir, max_primitives=settings.max_insert_expansion)
     db.commit()
 
     all_entities = [
@@ -175,9 +278,20 @@ async def run_phase_1(db: Session, project_id: str) -> dict:
     if all_entities:
         _persist_entities(db, project_id, all_entities)
 
+    emit_event(
+        db,
+        project_id,
+        "rules.completed",
+        f"Rule engine completed across {len(all_entities)} elements.",
+        tone="ok",
+        payload={"entityCount": len(all_entities)},
+        dedupe_key=f"rules.completed:{project_id}",
+    )
+    db.commit()
+
     findings = rules.run_checks(entities=all_entities, gemini_issues=[])
     if findings:
-        _persist_issues(db, project_id, findings)
+        _persist_issues_reconciling(db, project_id, findings, source="deterministic")
 
     summary = _summarize(findings)
     project.status = "ready"
@@ -210,11 +324,30 @@ async def run_phase_2(db: Session, project_id: str) -> None:
     str_file = _find_file(files, "str")
     mech_file = _find_file(files, "mech")
     if not str_file or not mech_file or not _llm_available():
-        _STATE[project_id] = AnalysisState(**{**state.__dict__, "llm_status": "skipped"})
+        state.llm_status = "skipped"
+        _STATE[project_id] = state
+        emit_event(
+            db,
+            project_id,
+            "llm.skipped",
+            "LLM enrichment skipped (no provider/key configured).",
+            tone="info",
+            dedupe_key=f"llm.skipped:{project_id}",
+        )
+        db.commit()
         return
 
     state.llm_status = "running"
     _STATE[project_id] = state
+    emit_event(
+        db,
+        project_id,
+        "llm.started",
+        f"Calling LLM ({settings.llm_provider}) for enrichment.",
+        tone="info",
+        dedupe_key=f"llm.started:{project_id}",
+    )
+    db.commit()
 
     def _meta(file_row: File) -> dict:
         meta = json.loads(file_row.parse_meta) if file_row.parse_meta else {}
@@ -291,28 +424,19 @@ async def run_phase_2(db: Session, project_id: str) -> None:
         state.llm_error = str(exc)
 
     # Append LLM issues (don't clobber the deterministic set)
-    now = int(time.time() * 1000)
-    for finding in llm_findings:
-        db.add(
-            Issue(
-                id=str(uuid.uuid4()),
-                project_id=project_id,
-                severity=finding["severity"],
-                category=finding["category"],
-                code=finding["code"],
-                title=finding["title"],
-                evidence=finding.get("evidence"),
-                sheet=finding.get("sheet"),
-                grid=finding.get("grid"),
-                mech_ref=finding.get("mech_ref"),
-                str_ref=finding.get("str_ref"),
-                formula=finding.get("formula"),
-                result_json=None,
-                state="open",
-                assigned=None,
-                created_at=now,
-            )
-        )
+    _persist_issues_reconciling(db, project_id, llm_findings, source="llm")
+
+    emit_event(
+        db,
+        project_id,
+        "llm.completed" if not state.llm_error else "llm.failed",
+        f"LLM enrichment produced {len(llm_findings)} additional findings."
+        if not state.llm_error
+        else f"LLM enrichment failed: {state.llm_error}",
+        tone="ok" if not state.llm_error else "fail",
+        payload={"count": len(llm_findings)},
+        dedupe_key=f"llm.completed:{project_id}",
+    )
     db.commit()
 
     # Recompute summary across all issues
@@ -350,10 +474,42 @@ async def run_analysis(db: Session, project_id: str) -> dict:
         project = db.get(Project, project_id)
         if project:
             project.status = "error"
+            emit_event(
+                db,
+                project_id,
+                "system.error",
+                f"Analysis failed: {exc}",
+                tone="fail",
+                payload={"phase": "rules"},
+                dedupe_key=f"system.error.rules:{project_id}",
+            )
             db.commit()
         _STATE[project_id] = AnalysisState(status="error", error=str(exc))
         raise
 
-    # Fire phase 2 in the background — caller doesn't await it
-    asyncio.create_task(run_phase_2(db, project_id))
+    _schedule_phase_2(db, project_id)
     return {"status": "done", "phase": "rules"}
+
+
+def _schedule_phase_2(db: Session, project_id: str) -> None:
+    """Fire phase 2 in the background.
+
+    Works from both inside a running loop (e.g. async handler) and from a
+    sync handler (e.g. FastAPI sync router during tests). Without a loop, we
+    use ``asyncio.run`` on a background thread so the request isn't blocked.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        import threading
+
+        from app.db import SessionLocal
+
+        def _runner() -> None:
+            with SessionLocal() as session:
+                asyncio.run(run_phase_2(session, project_id))
+
+        threading.Thread(target=_runner, daemon=True).start()
+        return
+
+    asyncio.create_task(run_phase_2(db, project_id))

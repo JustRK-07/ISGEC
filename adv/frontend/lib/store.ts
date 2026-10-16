@@ -1,6 +1,7 @@
 /** Zustand store — sign-in, projects, modal state. */
 
 import { create } from "zustand";
+import { api } from "./api";
 import type { IssueOut, ProjectDetail, ProjectSummary } from "./api";
 
 interface SessionState {
@@ -37,11 +38,15 @@ interface ModalState {
 interface WorkspaceState {
   selectedIssueId: string | null;
   hoveredIssueId: string | null;
-  activeSheet: string;
+  activeSheet: string | null;
+  sheets: string[];
   highlightClash: boolean;
   selectIssue: (id: string | null) => void;
   hoverIssue: (id: string | null) => void;
-  setSheet: (sheet: string) => void;
+  setSheet: (sheet: string | null) => void;
+  setSheets: (sheets: string[]) => void;
+  nextSheet: () => void;
+  previousSheet: () => void;
   toggleClashHighlight: () => void;
 }
 
@@ -66,8 +71,6 @@ export const useModals = create<ModalState>((set) => ({
   openUpload: () => set({ uploadOpen: true }),
   closeUpload: () => set({ uploadOpen: false }),
 }));
-
-import { api } from "./api";
 
 export const useProjects = create<ProjectsState>((set, get) => ({
   list: [],
@@ -117,11 +120,31 @@ export const useProjects = create<ProjectsState>((set, get) => ({
 export const useWorkspace = create<WorkspaceState>((set) => ({
   selectedIssueId: null,
   hoveredIssueId: null,
-  activeSheet: "0001",
+  activeSheet: null,
+  sheets: [],
   highlightClash: true,
   selectIssue: (id) => set({ selectedIssueId: id }),
   hoverIssue: (id) => set({ hoveredIssueId: id }),
   setSheet: (sheet) => set({ activeSheet: sheet }),
+  setSheets: (sheets) =>
+    set((state) => ({
+      sheets,
+      activeSheet: state.activeSheet && sheets.includes(state.activeSheet)
+        ? state.activeSheet
+        : (sheets[0] ?? null),
+    })),
+  nextSheet: () =>
+    set((state) => {
+      if (!state.sheets.length) return state;
+      const index = Math.max(0, state.sheets.indexOf(state.activeSheet ?? ""));
+      return { activeSheet: state.sheets[Math.min(state.sheets.length - 1, index + 1)] };
+    }),
+  previousSheet: () =>
+    set((state) => {
+      if (!state.sheets.length) return state;
+      const index = Math.max(0, state.sheets.indexOf(state.activeSheet ?? ""));
+      return { activeSheet: state.sheets[Math.max(0, index - 1)] };
+    }),
   toggleClashHighlight: () => set((s) => ({ highlightClash: !s.highlightClash })),
 }));
 

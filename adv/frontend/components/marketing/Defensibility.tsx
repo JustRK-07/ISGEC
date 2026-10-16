@@ -1,28 +1,33 @@
 export function Defensibility() {
   return (
-    <section className="py-20 px-6 bg-bg-dark text-white">
-      <div className="max-w-4xl mx-auto text-center">
-        <h2 className="text-h2 font-bold mb-6">
-          Every finding traces back to a sheet, a gridline, an element, and a formula.
-        </h2>
-        <div className="grid md:grid-cols-3 gap-6 mt-10">
-          <div className="border border-text-muted/30 rounded p-6">
-            <p className="font-mono text-eyebrow uppercase text-accent mb-3">Sheet</p>
-            <p className="text-sm">Every finding cites SHEET-S02 (or M-01, REV-C).</p>
-          </div>
-          <div className="border border-text-muted/30 rounded p-6">
-            <p className="font-mono text-eyebrow uppercase text-accent mb-3">Grid</p>
-            <p className="text-sm">Every finding cites the grid intersection, e.g., GRID TP104-B/2.</p>
-          </div>
-          <div className="border border-text-muted/30 rounded p-6">
-            <p className="font-mono text-eyebrow uppercase text-accent mb-3">Formula</p>
-            <p className="text-sm">Every finding shows the exact rule and the numeric result.</p>
-          </div>
+    <section className="defensibility" id="defensibility">
+      <div className="section-label">08 / DEFENSIBILITY</div>
+      <h2>
+        Every finding traces back to a <em>sheet</em>, a <em>gridline</em>, an{" "}
+        <em>element</em>, and a <em>formula</em>.
+      </h2>
+
+      <div className="def-grid">
+        <div className="def-cell">
+          <div className="def-icon">[ SHEET ]</div>
+          <h4>Sheet-located</h4>
+          <p>Every finding cites SHEET-S02, M-01, or REV-C. Jump directly from the report to the exact drawing sheet.</p>
         </div>
-        <p className="mt-10 text-text-muted">
-          No confidence percentages. No black boxes. If a reviewer asks <em>why was this flagged</em>, the answer is one click away.
-        </p>
+        <div className="def-cell">
+          <div className="def-icon">[ GRID ]</div>
+          <h4>Grid-anchored</h4>
+          <p>Every finding cites the grid intersection, e.g. GRID TP104-B / 2. No &quot;somewhere on the drawing.&quot;</p>
+        </div>
+        <div className="def-cell">
+          <div className="def-icon">[ FORMULA ]</div>
+          <h4>Formula-grounded</h4>
+          <p>Every finding shows the exact rule applied and the numeric result. Auditable. Defensible. Sign-off ready.</p>
+        </div>
       </div>
+
+      <p className="def-closer">
+        [ No confidence percentages. No black boxes. If a reviewer asks &quot;why was this flagged&quot;, the answer is one click away. ]
+      </p>
     </section>
   );
 }

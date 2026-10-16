@@ -12,6 +12,7 @@ from app import __version__
 from app.config import get_settings
 from app.db import init_db
 from app.routers import analysis, files, health, issues, projects, revisions
+from app.services import dwg_convert
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +29,13 @@ async def lifespan(app: FastAPI):
     logger.info("  upload_dir  = %s", settings.upload_dir_abs)
     logger.info("  database    = %s", settings.database_url)
     logger.info("  llm         = %s", settings.llm_provider)
+    bin_path = dwg_convert.find_libredwg()
+    logger.info(
+        "  libredwg    = %s (available=%s)",
+        bin_path or "<not found>",
+        dwg_convert.libredwg_available(),
+    )
+    logger.info("  max_insert_expansion = %d", settings.max_insert_expansion)
     init_db()
     yield
     logger.info("Shutting down ADV backend")

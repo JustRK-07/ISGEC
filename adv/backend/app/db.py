@@ -59,6 +59,10 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """Create all tables. Called on app startup."""
     # Import models so they register with Base.metadata
-    from app.models import entity, file, issue, project, revision  # noqa: F401
+    from app.models import entity, event as event_model, file, issue, project, revision  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    from app.services.events import ensure_event_table
+
+    ensure_event_table(engine)

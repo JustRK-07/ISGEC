@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { IssueOut } from "@/lib/api";
+import type { CheckOut, IssueOut, ProjectEventOut } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useWorkspace } from "@/lib/store";
 
@@ -28,28 +28,9 @@ type TabKey = "issues" | "checks" | "activity" | "legend";
 interface Props {
   issues: IssueOut[];
   summary: { pass: number; warn: number; fail: number };
+  checks: CheckOut[];
+  events: ProjectEventOut[];
 }
-
-const CHECKS = [
-  { id: "fuzzy", name: "Fuzzy ID match", meta: "Levenshtein + sentence-transformer + grid proximity", state: "ok", count: 47 },
-  { id: "pos", name: "Position tolerance", meta: "Euclidean · default ±25 mm", state: "ok", count: 142 },
-  { id: "size", name: "Size tolerance", meta: "Per-axis · default ±25 mm", state: "warn", count: 1 },
-  { id: "poly", name: "Polygon clash", meta: "Shapely polygon intersection", state: "fail", count: 3 },
-  { id: "clear", name: "Clearance zone", meta: "Min. distance threshold per service type", state: "ok", count: 0 },
-  { id: "elev", name: "Elevation alignment", meta: "T.O.S. drift · default ±50 mm", state: "warn", count: 1 },
-  { id: "req", name: "Required-not-missing", meta: "Required element not present on partner sheet", state: "warn", count: 2 },
-  { id: "orph", name: "Orphan-provided", meta: "Provided element not required", state: "ok", count: 0 },
-];
-
-const ACTIVITY = [
-  { tone: "fail", time: "16:42:18 · TODAY", text: "Rule Engine flagged 3 issues on sheet 0301. Codes: WBE-B46 × 3." },
-  { tone: "", time: "16:42:12", text: "Rule Engine completed 8/8 deterministic checks across 17 sheets. 142 elements passed." },
-  { tone: "warn", time: "16:41:54", text: "Normalization Agent (Qwen2.5-32B · local) emitted canonical schema for 142 elements." },
-  { tone: "ok", time: "16:41:31", text: "Grid registration resolved 6 grid bubbles (G, C, B × 2 levels). Coordinate frame unified." },
-  { tone: "ok", time: "16:41:08", text: "DWG → DXF conversion via ODA File Converter. 17 sheets · 142 elements." },
-  { tone: "ok", time: "16:40:55", text: "Ingestion: 3 DWG files hashed · revision ledger updated · Rev-C baseline locked." },
-  { tone: "ok", time: "16:40:42", text: "User engineer@firm.com uploaded Mech GA + Str GA + Superimposed." },
-];
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "issues", label: "Issues" },
@@ -58,7 +39,35 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "legend", label: "Legend" },
 ];
 
-export function IssueInspector({ issues, summary }: Props) {
+const CHECK_STATE_ICON: Record<CheckOut["state"], string> = {
+  ok: "✓",
+  warn: "!",
+  fail: "✕",
+};
+
+const EVENT_TONE_DOT: Record<ProjectEventOut["tone"], string> = {
+  info: "info",
+  ok: "ok",
+  warn: "warn",
+  fail: "fail",
+};
+
+/** Render an event timestamp relative to today (HH:MM:SS) or with date fallback. */
+function formatActivityTime(createdAtMs: number): string {
+  const date = new Date(createdAtMs);
+  if (Number.isNaN(date.getTime())) return "—";
+  const today = new Date();
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  const time = date.toLocaleTimeString([], { hour12: false });
+  return sameDay ? `${time} · TODAY` : `${date.toISOString().slice(0, 10)} ${time}`;
+}
+
+const EMPTY_STATE = "—";
+
+export function IssueInspector({ issues, summary, checks, events }: Props) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [tab, setTab] = useState<TabKey>("issues");
   const selected = useWorkspace((s) => s.selectedIssueId);
@@ -242,10 +251,13 @@ export function IssueInspector({ issues, summary }: Props) {
       {/* Checks tab */}
       <div className={`panel-tab-content${tab === "checks" ? " active" : ""}`} data-tab-content="checks">
         <div className="checks-list">
-          {CHECKS.map((c) => (
+          {checks.length === 0 && (
+            <div className="panel-list-empty">No checks recorded yet.</div>
+          )}
+          {checks.map((c) => (
             <div key={c.id} className={`check-row ${c.state}`}>
               <div className={`check-icon ${c.state}`}>
-                {c.state === "ok" ? "✓" : c.state === "warn" ? "!" : "✕"}
+                {CHECK_STATE_ICON[c.state]}
               </div>
               <div>
                 <div className="check-name">{c.name}</div>
@@ -260,12 +272,20 @@ export function IssueInspector({ issues, summary }: Props) {
       {/* Activity tab */}
       <div className={`panel-tab-content${tab === "activity" ? " active" : ""}`} data-tab-content="activity">
         <div className="activity-list">
-          {ACTIVITY.map((a, i) => (
-            <div key={i} className="activity-item">
-              <div className={`activity-dot ${a.tone}`} />
+          {events.length === 0 && (
+            <div className="panel-list-empty">No activity recorded yet.</div>
+          )}
+          {events.map((e) => (
+            <div key={e.id} className="activity-item">
+              <div className={`activity-dot ${EVENT_TONE_DOT[e.tone]}`} />
               <div className="activity-body">
-                <div className="ab-time">{a.time}</div>
-                <div className="ab-text">{a.text}</div>
+                <div className="ab-time">{formatActivityTime(e.createdAt)}</div>
+                <div className="ab-text">
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-soft)", marginRight: 6 }}>
+                    {e.code}
+                  </span>
+                  {e.message || EMPTY_STATE}
+                </div>
               </div>
             </div>
           ))}

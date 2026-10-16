@@ -1,23 +1,33 @@
-const STEPS = [
-  { n: 1, title: "Upload Drawings", desc: "Drop in your Mech GA, Str GA, optional superimposed." },
-  { n: 2, title: "Auto-Detect Format & Grid", desc: "Ingestion Agent hashes files and registers sheets to a unified frame." },
-  { n: 3, title: "Match & Check", desc: "Normalization + 8 deterministic checks; findings stream in." },
-  { n: 4, title: "Review & Sign Off", desc: "Click any finding → zoom to its location. Export signed PDF." },
-];
-
 export function HowItWorks() {
   return (
-    <section className="py-20 px-6">
-      <div className="max-w-6xl mx-auto">
-        <h2 className="text-h2 font-bold mb-10 text-center">How it works</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {STEPS.map((s) => (
-            <div key={s.n} className="border-l-4 border-accent pl-4">
-              <p className="font-mono text-2xl text-accent mb-2">{s.n}</p>
-              <h3 className="font-semibold mb-1">{s.title}</h3>
-              <p className="text-sm text-text-muted">{s.desc}</p>
-            </div>
-          ))}
+    <section className="section section-narrow" id="how">
+      <div className="container">
+        <div className="section-header reveal">
+          <div className="section-label">06 / HOW IT WORKS</div>
+          <h2>From upload to signed report in 5–15 minutes.</h2>
+        </div>
+
+        <div className="how-rail reveal">
+          <div className="how-step">
+            <div className="how-step-num"><span>01</span>STEP</div>
+            <h4>Upload Drawings</h4>
+            <p>Drop in Mechanical GA, Structural GA, and (optional) Superimposed as native DWG files. DXF, IFC, and RVT also supported.</p>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num"><span>02</span>STEP</div>
+            <h4>Detect &amp; Register</h4>
+            <p>The Ingestion Agent hashes files, detects vector vs raster, and registers each sheet to a unified coordinate frame using grid bubbles.</p>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num"><span>03</span>STEP</div>
+            <h4>Match &amp; Check</h4>
+            <p>The Normalization Agent builds canonical element lists. The Rule Engine runs 8 deterministic checks. Findings stream into the inspector panel.</p>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num"><span>04</span>STEP</div>
+            <h4>Sign Off</h4>
+            <p>Click any finding to jump to its location. Approve, override, or comment. Export a signed PDF report with full audit trail.</p>
+          </div>
         </div>
       </div>
     </section>

@@ -18,6 +18,7 @@ from app.models.file import File as FileModel
 from app.models.issue import Issue
 from app.models.project import Project
 from app.services import analyze
+from app.services.events import _event_to_dict, aggregate_checks, emit_event, list_events
 from app.utils.storage import (
     ALLOWED_EXTS,
     persist_upload,
@@ -132,6 +133,14 @@ async def create_project(
         last_opened=now,
     )
     db.add(project)
+    emit_event(
+        db,
+        project_id,
+        "upload.started",
+        "Project upload started.",
+        dedupe_key=f"upload.started:{project_id}",
+        created_at=now,
+    )
     db.commit()
 
     files_meta: dict[str, dict | None] = {"str": None, "mech": None, "extra": None}
@@ -162,6 +171,15 @@ async def create_project(
                 parse_status="pending",
             )
         )
+        emit_event(
+            db,
+            project_id,
+            f"upload.{discipline}",
+            f"Uploaded {discipline.upper()} drawing {upload.filename}.",
+            tone="ok",
+            payload={"filename": upload.filename, "sizeBytes": stored.size_bytes, "sha256": stored.sha256},
+            dedupe_key=f"upload.{discipline}:{stored.sha256}",
+        )
         files_meta[discipline] = {
             "id": stored.sha256[:12],
             "filename": upload.filename,
@@ -169,6 +187,14 @@ async def create_project(
             "sizeBytes": stored.size_bytes,
             "sha256": stored.sha256,
         }
+    emit_event(
+        db,
+        project_id,
+        "upload.complete",
+        "Drawing upload completed; analysis queued.",
+        tone="ok",
+        dedupe_key=f"upload.complete:{project_id}",
+    )
     db.commit()
 
     # Kick off the analyze pipeline. Each request owns its DB session, so we
@@ -208,8 +234,6 @@ def get_project(project_id: str, db: Session = Depends(get_db)) -> dict:
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    project.last_opened = int(time.time() * 1000)
-    db.commit()
 
     files = db.query(FileModel).filter(FileModel.project_id == project_id).all()
     issues = db.query(Issue).filter(Issue.project_id == project_id).all()
@@ -262,8 +286,17 @@ def get_project(project_id: str, db: Session = Depends(get_db)) -> dict:
             "startedAt": state.started_at,
             "finishedAt": state.finished_at,
         },
+        "checks": aggregate_checks(issues),
+        "events": [_event_to_dict(event) for event in list_events(db, project_id)],
         "summary": _summarize_issues(issues),
     }
+
+
+@router.get("/{project_id}/events")
+def get_project_events(project_id: str, limit: int = 200, db: Session = Depends(get_db)) -> list[dict]:
+    if not db.get(Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return [_event_to_dict(event) for event in list_events(db, project_id, limit)]
 
 
 @router.delete("/{project_id}")
